@@ -14,6 +14,12 @@ TOKEN = os.getenv("8616569156:AAH0o8yrFXnNshadmNWlx4ewGYvdFIbUjf4")
 # Steps
 ISSUE, LOCATION, DETAILS = range(3)
 
+# /start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🚓 Welcome to Police Bot\n\nUse /complaint to file a complaint."
+    )
+
 # Start complaint
 async def start_complaint(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚨 What is your issue?")
@@ -57,6 +63,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Main app
 app = ApplicationBuilder().token(TOKEN).build()
 
+# Conversation handler
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("complaint", start_complaint)],
     states={
@@ -67,6 +74,8 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
+# Add handlers
+app.add_handler(CommandHandler("start", start))
 app.add_handler(conv_handler)
 
 print("Bot running...")
