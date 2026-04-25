@@ -1,51 +1,73 @@
+import os
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+    ConversationHandler
+)
 
-TOKEN = "8616569156:AAH0o8yrFXnNshadmNWlx4ewGYvdFIbUjf4"
+TOKEN = os.getenv("8616569156:AAH0o8yrFXnNshadmNWlx4ewGYvdFIbUjf4")
 
-# Dictionary to store user data temporarily
-user_data = {}
+# Steps
+ISSUE, LOCATION, DETAILS = range(3)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data[update.effective_user.id] = {}
-    await update.message.reply_text("Welcome to Complaint Bot\n\nEnter your Name:")
+# Start complaint
+async def start_complaint(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚨 What is your issue?")
+    return ISSUE
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text
+# Step 1
+async def get_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["issue"] = update.message.text
+    await update.message.reply_text("📍 Enter location:")
+    return LOCATION
 
-    if user_id not in user_data:
-        await update.message.reply_text("Type /start to begin")
-        return
+# Step 2
+async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["location"] = update.message.text
+    await update.message.reply_text("📝 Enter details:")
+    return DETAILS
 
-    user = user_data[user_id]
+# Step 3 (Final)
+async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["details"] = update.message.text
 
-    if "name" not in user:
-        user["name"] = text
-        await update.message.reply_text("Enter your Phone Number:")
-    
-    elif "phone" not in user:
-        user["phone"] = text
-        await update.message.reply_text("Enter your Complaint:")
-    
-    elif "complaint" not in user:
-        user["complaint"] = text
-        
-        await update.message.reply_text(
-            f"Complaint Registered ✅\n\n"
-            f"Name: {user['name']}\n"
-            f"Phone: {user['phone']}\n"
-            f"Complaint: {user['complaint']}"
-        )
+    user = update.message.from_user
 
-        # Reset after submission
-        user_data.pop(user_id)
+    # Save complaint
+    with open("complaints.txt", "a", encoding="utf-8") as f:
+        f.write(f"User: {user.first_name} | ID: {user.id}\n")
+        f.write(f"Issue: {context.user_data['issue']}\n")
+        f.write(f"Location: {context.user_data['location']}\n")
+        f.write(f"Details: {context.user_data['details']}\n")
+        f.write("-" * 40 + "\n")
 
+    await update.message.reply_text("✅ Complaint submitted successfully!")
+
+    return ConversationHandler.END
+
+# Cancel command
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Complaint cancelled.")
+    return ConversationHandler.END
+
+# Main app
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT, handle_message))
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler("complaint", start_complaint)],
+    states={
+        ISSUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_issue)],
+        LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_location)],
+        DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_details)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
+
+app.add_handler(conv_handler)
 
 print("Bot running...")
 app.run_polling()
-
