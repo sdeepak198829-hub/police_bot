@@ -9,7 +9,7 @@ from telegram.ext import (
     ConversationHandler
 )
 
-TOKEN = os.getenv("8616569156:AAH0o8yrFXnNshadmNWlx4ewGYvdFIbUjf4")
+TOKEN = os.getenv("BOT_TOKEN")
 
 # Steps
 ISSUE, LOCATION, DETAILS = range(3)
