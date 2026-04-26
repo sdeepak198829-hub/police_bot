@@ -16,6 +16,7 @@ ISSUE, LOCATION, DETAILS = range(3)
 
 # /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("START COMMAND RECEIVED")
     await update.message.reply_text(
         "🚓 Welcome to Police Bot\n\nUse /complaint to file a complaint."
     )
