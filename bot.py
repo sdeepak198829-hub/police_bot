@@ -79,4 +79,5 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(conv_handler)
 
 print("Bot running...")
-app.run_polling()
+if __name__ == "__main__":
+    app.run_polling(drop_pending_updates=True)
