@@ -12,10 +12,10 @@ from telegram.ext import (
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-# Steps
+# Conversation states
 ISSUE, LOCATION, DETAILS = range(3)
 
-# /start command
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🚓 Welcome to Police Bot\n\nUse /complaint to file a complaint."
@@ -38,16 +38,15 @@ async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📝 Enter details:")
     return DETAILS
 
-# Step 3 (Final)
+# Step 3
 async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["details"] = update.message.text
-
     user = update.message.from_user
 
-    # Generate Complaint ID
+    # Generate complaint ID
     complaint_id = str(uuid.uuid4())[:8]
 
-    # Save complaint
+    # Save to file
     with open("complaints.txt", "a", encoding="utf-8") as f:
         f.write(f"Complaint ID: {complaint_id}\n")
         f.write(f"User: {user.first_name} | ID: {user.id}\n")
@@ -63,18 +62,18 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
-# Cancel command
+# Cancel
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Complaint cancelled.")
     return ConversationHandler.END
 
 # Check status
 async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        complaint_id = context.args[0]
-    except:
-        await update.message.reply_text("❌ Usage: /status <complaint_id>")
+    if not context.args:
+        await update.message.reply_text("Usage: /status <complaint_id>")
         return
+
+    complaint_id = context.args[0]
 
     try:
         with open("complaints.txt", "r", encoding="utf-8") as f:
@@ -86,11 +85,14 @@ async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await update.message.reply_text("❌ Complaint not found.")
-
     except:
         await update.message.reply_text("Error checking complaint.")
 
-# Main app
+# --- APP SETUP ---
+
+PORT = int(os.environ.get("PORT", 8000))
+WEBHOOK_URL = os.environ.get("RAILWAY_STATIC_URL")
+
 app = ApplicationBuilder().token(TOKEN).build()
 
 # Conversation handler
@@ -109,30 +111,10 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(conv_handler)
 app.add_handler(CommandHandler("status", check_status))
 
-print("Bot running...")
-
-# Run bot safely (prevents conflict issues)
-if __name__ == "__main__":
-    import asyncio
-from telegram.ext import Application
-
-PORT = int(os.environ.get("PORT", 8000))
-WEBHOOK_URL = os.environ.get("RAILWAY_STATIC_URL")
-
-PORT = int(os.environ.get("PORT", 8000))
-WEBHOOK_URL = os.environ.get("RAILWAY_STATIC_URL")
-
-app = ApplicationBuilder().token(TOKEN).build()
-
-# handlers
-app.add_handler(CommandHandler("start", start))
-app.add_handler(conv_handler)
-app.add_handler(CommandHandler("status", check_status))
-
-print("Starting webhook bot...")
+print("🚀 Webhook bot starting...")
 
 app.run_webhook(
     listen="0.0.0.0",
     port=PORT,
-    webhook_url=WEBHOOK_URL
+    webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
 )
