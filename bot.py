@@ -1,4 +1,5 @@
 import os
+import uuid
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -16,7 +17,6 @@ ISSUE, LOCATION, DETAILS = range(3)
 
 # /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("START COMMAND RECEIVED")
     await update.message.reply_text(
         "🚓 Welcome to Police Bot\n\nUse /complaint to file a complaint."
     )
@@ -44,20 +44,22 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.message.from_user
 
-    # Save complaint
-    import uuid
+    # Generate Complaint ID
+    complaint_id = str(uuid.uuid4())[:8]
 
-with open("complaints.txt", "a", encoding="utf-8") as f:
-    f.write(f"Complaint ID: {complaint_id}\n")
-    f.write(f"User: {user.first_name} | ID: {user.id}\n")
-    f.write(f"Issue: {context.user_data['issue']}\n")
-    f.write(f"Location: {context.user_data['location']}\n")
-    f.write(f"Details: {context.user_data['details']}\n")
-    f.write("-" * 40 + "\n")
+    # Save complaint
+    with open("complaints.txt", "a", encoding="utf-8") as f:
+        f.write(f"Complaint ID: {complaint_id}\n")
+        f.write(f"User: {user.first_name} | ID: {user.id}\n")
+        f.write(f"Issue: {context.user_data['issue']}\n")
+        f.write(f"Location: {context.user_data['location']}\n")
+        f.write(f"Details: {context.user_data['details']}\n")
+        f.write("Status: Pending\n")
+        f.write("-" * 40 + "\n")
 
     await update.message.reply_text(
-    f"✅ Complaint submitted!\nYour Complaint ID: {complaint_id}"
-)
+        f"✅ Complaint submitted!\nYour Complaint ID: {complaint_id}"
+    )
 
     return ConversationHandler.END
 
@@ -66,6 +68,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Complaint cancelled.")
     return ConversationHandler.END
 
+# Check status
 async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         complaint_id = context.args[0]
@@ -78,7 +81,9 @@ async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data = f.read()
 
         if complaint_id in data:
-            await update.message.reply_text(f"📄 Complaint {complaint_id} found.\nStatus: Pending")
+            await update.message.reply_text(
+                f"📄 Complaint {complaint_id} found.\nStatus: Pending"
+            )
         else:
             await update.message.reply_text("❌ Complaint not found.")
 
@@ -103,6 +108,9 @@ conv_handler = ConversationHandler(
 app.add_handler(CommandHandler("start", start))
 app.add_handler(conv_handler)
 app.add_handler(CommandHandler("status", check_status))
+
 print("Bot running...")
+
+# Run bot safely (prevents conflict issues)
 if __name__ == "__main__":
     app.run_polling(drop_pending_updates=True)
