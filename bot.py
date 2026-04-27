@@ -1,4 +1,8 @@
 import os
+import json
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -10,6 +14,15 @@ from telegram.ext import (
 )
 
 TOKEN = os.getenv("BOT_TOKEN")
+# Google Sheets setup
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+creds_dict = json.loads(os.getenv("GOOGLE_CREDENTIALS"))
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+
+client = gspread.authorize(creds)
+
+sheet = client.open("Police Complaints").sheet1
 
 ISSUE, LOCATION, DETAILS = range(3)
 
@@ -39,13 +52,16 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     complaint_id = f"CMP{user.id}{len(context.user_data)}"
 
-    with open("complaints.txt", "a", encoding="utf-8") as f:
-        f.write(f"Complaint ID: {complaint_id}\n")
-        f.write(f"User: {user.first_name} | ID: {user.id}\n")
-        f.write(f"Issue: {context.user_data['issue']}\n")
-        f.write(f"Location: {context.user_data['location']}\n")
-        f.write(f"Details: {context.user_data['details']}\n")
-        f.write("-" * 40 + "\n")
+    # Save to Google Sheets
+sheet.append_row([
+    complaint_id,
+    user.first_name,
+    user.id,
+    context.user_data['issue'],
+    context.user_data['location'],
+    context.user_data['details'],
+    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+])
 
     await update.message.reply_text(
         f"✅ Complaint submitted!\n\n🆔 Your Complaint ID: {complaint_id}"
