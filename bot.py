@@ -66,6 +66,25 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Complaint cancelled.")
     return ConversationHandler.END
 
+async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        complaint_id = context.args[0]
+    except:
+        await update.message.reply_text("❌ Usage: /status <complaint_id>")
+        return
+
+    try:
+        with open("complaints.txt", "r", encoding="utf-8") as f:
+            data = f.read()
+
+        if complaint_id in data:
+            await update.message.reply_text(f"📄 Complaint {complaint_id} found.\nStatus: Pending")
+        else:
+            await update.message.reply_text("❌ Complaint not found.")
+
+    except:
+        await update.message.reply_text("Error checking complaint.")
+
 # Main app
 app = ApplicationBuilder().token(TOKEN).build()
 
@@ -83,7 +102,7 @@ conv_handler = ConversationHandler(
 # Add handlers
 app.add_handler(CommandHandler("start", start))
 app.add_handler(conv_handler)
-
+app.add_handler(CommandHandler("status", check_status))
 print("Bot running...")
 if __name__ == "__main__":
     app.run_polling(drop_pending_updates=True)
