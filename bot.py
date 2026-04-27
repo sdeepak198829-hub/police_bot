@@ -25,7 +25,26 @@ client = gspread.authorize(creds)
 sheet = client.open("Police Complaints").sheet1
 
 ISSUE, LOCATION, DETAILS = range(3)
+def save_to_sheets(data):
+    try:
+        print("Connecting to Google Sheets...")
 
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        client = gspread.authorize(creds)
+
+        sheet = client.open("PoliceComplaints").sheet1
+
+        sheet.append_row(data)
+
+        print("Saved to Google Sheets!")
+
+    except Exception as e:
+        print("ERROR:", e)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🚓 Welcome to Police Bot\n\nUse /complaint to file a complaint."
@@ -52,17 +71,25 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     complaint_id = f"CMP{user.id}{len(context.user_data)}"
 
-    # Save to Google Sheets
-sheet.append_row([
-    complaint_id,
-    user.first_name,
-    user.id,
-    context.user_data['issue'],
-    context.user_data['location'],
-    context.user_data['details'],
-    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-])
+    # Save to local file
+    with open("complaints.txt", "a", encoding="utf-8") as f:
+        f.write(f"Complaint ID: {complaint_id}\n")
+        f.write(f"User: {user.first_name} | ID: {user.id}\n")
+        f.write(f"Issue: {context.user_data['issue']}\n")
+        f.write(f"Location: {context.user_data['location']}\n")
+        f.write(f"Details: {context.user_data['details']}\n")
+        f.write("-" * 40 + "\n")
 
+    # ✅ ADD THIS EXACTLY HERE
+    save_to_sheets([
+        complaint_id,
+        user.first_name,
+        context.user_data["issue"],
+        context.user_data["location"],
+        context.user_data["details"]
+    ])
+
+    # Reply to user
     await update.message.reply_text(
         f"✅ Complaint submitted!\n\n🆔 Your Complaint ID: {complaint_id}"
     )
