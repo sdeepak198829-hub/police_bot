@@ -45,14 +45,19 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
 
     # Save complaint
-    with open("complaints.txt", "a", encoding="utf-8") as f:
-        f.write(f"User: {user.first_name} | ID: {user.id}\n")
-        f.write(f"Issue: {context.user_data['issue']}\n")
-        f.write(f"Location: {context.user_data['location']}\n")
-        f.write(f"Details: {context.user_data['details']}\n")
-        f.write("-" * 40 + "\n")
+    import uuid
 
-    await update.message.reply_text("✅ Complaint submitted successfully!")
+with open("complaints.txt", "a", encoding="utf-8") as f:
+    f.write(f"Complaint ID: {complaint_id}\n")
+    f.write(f"User: {user.first_name} | ID: {user.id}\n")
+    f.write(f"Issue: {context.user_data['issue']}\n")
+    f.write(f"Location: {context.user_data['location']}\n")
+    f.write(f"Details: {context.user_data['details']}\n")
+    f.write("-" * 40 + "\n")
+
+    await update.message.reply_text(
+    f"✅ Complaint submitted!\nYour Complaint ID: {complaint_id}"
+)
 
     return ConversationHandler.END
 
