@@ -119,26 +119,20 @@ from telegram.ext import Application
 PORT = int(os.environ.get("PORT", 8000))
 WEBHOOK_URL = os.environ.get("RAILWAY_STATIC_URL")
 
-async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+PORT = int(os.environ.get("PORT", 8000))
+WEBHOOK_URL = os.environ.get("RAILWAY_STATIC_URL")
 
-    # handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("status", check_status))
+app = ApplicationBuilder().token(TOKEN).build()
 
-    await app.initialize()
-    await app.start()
+# handlers
+app.add_handler(CommandHandler("start", start))
+app.add_handler(conv_handler)
+app.add_handler(CommandHandler("status", check_status))
 
-    await app.bot.set_webhook(url=f"{WEBHOOK_URL}")
+print("Starting webhook bot...")
 
-    print("Webhook set. Bot running...")
-
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=WEBHOOK_URL,
-    )
-
-if __name__ == "__main__":
-    asyncio.run(main())
+app.run_webhook(
+    listen="0.0.0.0",
+    port=PORT,
+    webhook_url=WEBHOOK_URL
+)
