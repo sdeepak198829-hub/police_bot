@@ -2,7 +2,6 @@ import os
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -13,38 +12,35 @@ from telegram.ext import (
     ConversationHandler
 )
 
+# ---------------- TOKEN ----------------
 TOKEN = os.getenv("BOT_TOKEN")
-# Google Sheets setup
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+# ---------------- GOOGLE SHEETS SETUP ----------------
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
 
 creds_dict = json.loads(os.getenv("GOOGLE_CREDENTIALS"))
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
 client = gspread.authorize(creds)
 
+# 👇 IMPORTANT: Your sheet name must match EXACTLY
 sheet = client.open("Police Complaints").sheet1
 
+# ---------------- STATES ----------------
 ISSUE, LOCATION, DETAILS = range(3)
+
+# ---------------- SAVE FUNCTION ----------------
 def save_to_sheets(data):
     try:
-        print("Connecting to Google Sheets...")
-
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive"
-        ]
-
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-        client = gspread.authorize(creds)
-
-        sheet = client.open("PoliceComplaints").sheet1
-
         sheet.append_row(data)
-
         print("Saved to Google Sheets!")
-
     except Exception as e:
-        print("ERROR:", e)
+        print("ERROR saving to sheet:", e)
+
+# ---------------- BOT COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🚓 Welcome to Police Bot\n\nUse /complaint to file a complaint."
@@ -69,18 +65,9 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.message.from_user
 
-    complaint_id = f"CMP{user.id}{len(context.user_data)}"
+    complaint_id = f"CMP{user.id}"
 
-    # Save to local file
-    with open("complaints.txt", "a", encoding="utf-8") as f:
-        f.write(f"Complaint ID: {complaint_id}\n")
-        f.write(f"User: {user.first_name} | ID: {user.id}\n")
-        f.write(f"Issue: {context.user_data['issue']}\n")
-        f.write(f"Location: {context.user_data['location']}\n")
-        f.write(f"Details: {context.user_data['details']}\n")
-        f.write("-" * 40 + "\n")
-
-    # ✅ ADD THIS EXACTLY HERE
+    # Save to Google Sheets
     save_to_sheets([
         complaint_id,
         user.first_name,
@@ -89,7 +76,6 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["details"]
     ])
 
-    # Reply to user
     await update.message.reply_text(
         f"✅ Complaint submitted!\n\n🆔 Your Complaint ID: {complaint_id}"
     )
@@ -100,6 +86,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Complaint cancelled.")
     return ConversationHandler.END
 
+# ---------------- MAIN APP ----------------
 app = ApplicationBuilder().token(TOKEN).build()
 
 conv_handler = ConversationHandler(
