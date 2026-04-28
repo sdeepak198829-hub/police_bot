@@ -1,7 +1,10 @@
 import os
 import json
+from datetime import datetime
+
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -9,7 +12,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
     ContextTypes,
-    ConversationHandler
+    ConversationHandler,
 )
 
 # ---------------- TOKEN ----------------
@@ -18,7 +21,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 # ---------------- GOOGLE SHEETS SETUP ----------------
 scope = [
     "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
+    "https://www.googleapis.com/auth/drive",
 ]
 
 creds_dict = json.loads(os.getenv("GOOGLE_CREDENTIALS"))
@@ -26,7 +29,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
 client = gspread.authorize(creds)
 
-# 👇 IMPORTANT: Your sheet name must match EXACTLY
+# IMPORTANT: Sheet name must match exactly
 sheet = client.open("Police Complaints").sheet1
 
 # ---------------- STATES ----------------
@@ -40,73 +43,111 @@ def save_to_sheets(data):
     except Exception as e:
         print("ERROR saving to sheet:", e)
 
-# ---------------- BOT COMMANDS ----------------
+
+# ---------------- START COMMAND ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚓 Welcome to Police Bot\n\nUse /complaint to file a complaint."
+        "🚓 Welcome to Police Bot\n\n"
+        "Use /complaint to file a complaint.\n"
+        "Use /status to check complaint status."
     )
 
+
+# ---------------- COMPLAINT FLOW ----------------
 async def start_complaint(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚨 What is your issue?")
     return ISSUE
-async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📄 Enter your Complaint ID:")
-    return STATUS_CHECK
+
+
 async def get_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["issue"] = update.message.text
     await update.message.reply_text("📍 Enter location:")
     return LOCATION
+
 
 async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["location"] = update.message.text
     await update.message.reply_text("📝 Enter details:")
     return DETAILS
 
+
 async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["details"] = update.message.text
 
     user = update.message.from_user
 
-    complaint_id = f"CMP{user.id}"
-async def get_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    complaint_id = update.message.text.strip()
+    # Unique complaint ID
+    complaint_id = f"CMP{user.id}{int(datetime.now().timestamp())}"
 
-    records = sheet.get_all_records()
+    # Default values
+    status = "Pending"
+    station = "Not Assigned"
+    officer = "Not Assigned"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    for row in records:
-        if row["Complaint ID"] == complaint_id:
-            await update.message.reply_text(
-                f"📄 Status: {row['Status']}\n"
-                f"🏢 Station: {row['Station']}\n"
-                f"👮 Officer: {row['Officer']}"
-            )
-            return ConversationHandler.END
-
-    await update.message.reply_text("❌ Complaint ID not found.")
-    return ConversationHandler.END
     # Save to Google Sheets
     save_to_sheets([
         complaint_id,
         user.first_name,
         context.user_data["issue"],
         context.user_data["location"],
-        context.user_data["details"]
+        context.user_data["details"],
+        status,
+        station,
+        officer,
+        timestamp
     ])
 
+    # Reply to user
     await update.message.reply_text(
-        f"✅ Complaint submitted!\n\n🆔 Your Complaint ID: {complaint_id}"
+        f"✅ Complaint submitted successfully!\n\n"
+        f"🆔 Your Complaint ID: {complaint_id}"
     )
 
     return ConversationHandler.END
 
+
+# ---------------- STATUS CHECK FLOW ----------------
+async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📄 Enter your Complaint ID:")
+    return STATUS_CHECK
+
+
+async def get_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    complaint_id = update.message.text.strip()
+
+    try:
+        records = sheet.get_all_records()
+
+        for row in records:
+            if row["Complaint ID"] == complaint_id:
+                await update.message.reply_text(
+                    f"📄 Status: {row['Status']}\n"
+                    f"🏢 Station: {row['Station']}\n"
+                    f"👮 Officer: {row['Officer']}"
+                )
+                return ConversationHandler.END
+
+        await update.message.reply_text("❌ Complaint ID not found.")
+        return ConversationHandler.END
+
+    except Exception as e:
+        await update.message.reply_text(f"⚠ Error checking status: {e}")
+        return ConversationHandler.END
+
+
+# ---------------- CANCEL COMMAND ----------------
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Complaint cancelled.")
+    await update.message.reply_text("❌ Process cancelled.")
     return ConversationHandler.END
+
 
 # ---------------- MAIN APP ----------------
 app = ApplicationBuilder().token(TOKEN).build()
 
-conv_handler = ConversationHandler(
+
+# Complaint handler
+complaint_handler = ConversationHandler(
     entry_points=[CommandHandler("complaint", start_complaint)],
     states={
         ISSUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_issue)],
@@ -116,6 +157,7 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
+# Status handler
 status_handler = ConversationHandler(
     entry_points=[CommandHandler("status", check_status)],
     states={
@@ -124,9 +166,13 @@ status_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
+
+# Add handlers
 app.add_handler(CommandHandler("start", start))
-app.add_handler(conv_handler)
+app.add_handler(complaint_handler)
 app.add_handler(status_handler)
 
+
+# ---------------- RUN BOT ----------------
 print("Bot running...")
 app.run_polling()
