@@ -30,7 +30,7 @@ client = gspread.authorize(creds)
 sheet = client.open("Police Complaints").sheet1
 
 # ---------------- STATES ----------------
-ISSUE, LOCATION, DETAILS = range(3)
+ISSUE, LOCATION, DETAILS, STATUS_CHECK = range(4)
 
 # ---------------- SAVE FUNCTION ----------------
 def save_to_sheets(data):
@@ -49,7 +49,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start_complaint(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚨 What is your issue?")
     return ISSUE
-
+async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📄 Enter your Complaint ID:")
+    return STATUS_CHECK
 async def get_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["issue"] = update.message.text
     await update.message.reply_text("📍 Enter location:")
@@ -66,7 +68,22 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
 
     complaint_id = f"CMP{user.id}"
+async def get_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    complaint_id = update.message.text.strip()
 
+    records = sheet.get_all_records()
+
+    for row in records:
+        if row["Complaint ID"] == complaint_id:
+            await update.message.reply_text(
+                f"📄 Status: {row['Status']}\n"
+                f"🏢 Station: {row['Station']}\n"
+                f"👮 Officer: {row['Officer']}"
+            )
+            return ConversationHandler.END
+
+    await update.message.reply_text("❌ Complaint ID not found.")
+    return ConversationHandler.END
     # Save to Google Sheets
     save_to_sheets([
         complaint_id,
@@ -99,8 +116,17 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
+status_handler = ConversationHandler(
+    entry_points=[CommandHandler("status", check_status)],
+    states={
+        STATUS_CHECK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_status)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
+
 app.add_handler(CommandHandler("start", start))
 app.add_handler(conv_handler)
+app.add_handler(status_handler)
 
 print("Bot running...")
 app.run_polling()
