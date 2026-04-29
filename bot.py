@@ -91,7 +91,7 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
 
     # Unique complaint ID
-    complaint_id = f"CMP{user.id}"
+    complaint_id = f"CMP{user.id}{int(datetime.now().timestamp())}"
 
     # Default fields
     status = "Pending"
