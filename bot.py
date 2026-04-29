@@ -3,7 +3,7 @@ import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -37,7 +37,7 @@ sheet = client.open("Police Complaints").sheet1
 # =========================
 # STATES
 # =========================
-ISSUE, LOCATION, DETAILS = range(3)
+ISSUE, LOCATION, DETAILS, PHONE = range(4)
 
 # =========================
 # SAVE TO GOOGLE SHEETS
@@ -83,45 +83,83 @@ async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return DETAILS
 
 # =========================
-# DETAILS + SAVE
+# DETAILS
 # =========================
 async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["details"] = update.message.text
 
-    user = update.message.from_user
-
-    # Unique complaint ID
-    complaint_id = f"CMP{user.id}{int(datetime.now().timestamp())}"
-
-    # Default fields
-    status = "Pending"
-    station = "Not Assigned"
-    officer = "Not Assigned"
-
-    # Current time
-    complaint_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Save to Google Sheets
-    save_to_sheets([
-        complaint_id,
-        user.first_name,
-        context.user_data["issue"],
-        context.user_data["location"],
-        context.user_data["details"],
-        status,
-        station,
-        officer,
-        complaint_time
-    ])
-
-    # Reply to user
-    await update.message.reply_text(
-        f"✅ Complaint submitted!\n\n"
-        f"🆔 Your Complaint ID: {complaint_id}\n\n"
-        f"Use:\n/status {complaint_id}\n\nto check complaint progress."
+    contact_button = KeyboardButton(
+        text="📞 Share Phone Number",
+        request_contact=True
     )
 
-    return ConversationHandler.END
+    reply_markup = ReplyKeyboardMarkup(
+        [[contact_button]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+    await update.message.reply_text(
+        "📱 Please share your phone number using the button below:",
+        reply_markup=reply_markup
+    )
+
+    return PHONE
+
+# =========================
+# PHONE + FINAL SAVE
+# =========================
+async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not update.message.contact:
+            await update.message.reply_text(
+                "❌ Please use the '📞 Share Phone Number' button."
+            )
+            return PHONE
+
+        user = update.message.from_user
+        phone_number = update.message.contact.phone_number
+
+        # Unique complaint ID
+        complaint_id = f"CMP{user.id}{int(datetime.now().timestamp())}"
+
+        # Default fields
+        status = "Pending"
+        station = "Not Assigned"
+        officer = "Not Assigned"
+
+        # Current time
+        complaint_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Save to Google Sheets
+        # COLUMN ORDER:
+        # Complaint ID | Name | Telegram ID | Phone | Issue | Location | Details | Status | Station | Officer | Time
+        save_to_sheets([
+            complaint_id,
+            user.first_name,
+            user.id,
+            phone_number,
+            context.user_data["issue"],
+            context.user_data["location"],
+            context.user_data["details"],
+            status,
+            station,
+            officer,
+            complaint_time
+        ])
+
+        await update.message.reply_text(
+            f"✅ Complaint submitted successfully!\n\n"
+            f"🆔 Your Complaint ID: {complaint_id}\n\n"
+            f"Use:\n/status {complaint_id}\n\nto check complaint progress."
+        )
+
+        return ConversationHandler.END
+
+    except Exception as e:
+        print("PHONE SAVE ERROR:", e)
+        await update.message.reply_text("❌ Error submitting complaint.")
+        return ConversationHandler.END
 
 # =========================
 # /status COMMAND
@@ -130,7 +168,6 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Check if complaint ID provided
         if not context.args:
             await update.message.reply_text(
                 "❌ Please use correct format:\n/status YOUR_COMPLAINT_ID"
@@ -170,13 +207,16 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 app = ApplicationBuilder().token(TOKEN).build()
 
-# Complaint conversation
+# =========================
+# COMPLAINT CONVERSATION
+# =========================
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("complaint", start_complaint)],
     states={
         ISSUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_issue)],
         LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_location)],
         DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_details)],
+        PHONE: [MessageHandler(filters.CONTACT, get_phone)],
     },
     fallbacks=[CommandHandler("cancel", cancel)],
 )
