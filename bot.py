@@ -3,7 +3,12 @@ import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardRemove,
+)
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -49,6 +54,7 @@ def save_to_sheets(data):
     except Exception as e:
         print("ERROR saving to sheet:", e)
 
+
 # =========================
 # /start COMMAND
 # =========================
@@ -59,33 +65,58 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Use /status COMPLAINT_ID to check complaint status."
     )
 
+
 # =========================
 # /complaint START
 # =========================
 async def start_complaint(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚨 What is your issue?")
+    # Clear previous conversation data
+    context.user_data.clear()
+
+    await update.message.reply_text(
+        "🚨 What is your issue?",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
     return ISSUE
+
 
 # =========================
 # ISSUE
 # =========================
 async def get_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.text:
+        await update.message.reply_text("❌ Please type your issue.")
+        return ISSUE
+
     context.user_data["issue"] = update.message.text
+
     await update.message.reply_text("📍 Enter location:")
     return LOCATION
+
 
 # =========================
 # LOCATION
 # =========================
 async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.text:
+        await update.message.reply_text("❌ Please type your location.")
+        return LOCATION
+
     context.user_data["location"] = update.message.text
+
     await update.message.reply_text("📝 Enter details:")
     return DETAILS
+
 
 # =========================
 # DETAILS
 # =========================
 async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.text:
+        await update.message.reply_text("❌ Please type complaint details.")
+        return DETAILS
+
     context.user_data["details"] = update.message.text
 
     contact_button = KeyboardButton(
@@ -105,6 +136,7 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     return PHONE
+
 
 # =========================
 # PHONE + FINAL SAVE
@@ -131,17 +163,16 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Current time
         complaint_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Save to Google Sheets
-        # COLUMN ORDER:
+        # Google Sheet Column Order:
         # Complaint ID | Name | Telegram ID | Phone | Issue | Location | Details | Status | Station | Officer | Time
         save_to_sheets([
             complaint_id,
             user.first_name,
             user.id,
             phone_number,
-            context.user_data["issue"],
-            context.user_data["location"],
-            context.user_data["details"],
+            context.user_data.get("issue", ""),
+            context.user_data.get("location", ""),
+            context.user_data.get("details", ""),
             status,
             station,
             officer,
@@ -151,20 +182,27 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ Complaint submitted successfully!\n\n"
             f"🆔 Your Complaint ID: {complaint_id}\n\n"
-            f"Use:\n/status {complaint_id}\n\nto check complaint progress."
+            f"Use:\n/status {complaint_id}\n\nto check complaint progress.",
+            reply_markup=ReplyKeyboardRemove()
         )
+
+        context.user_data.clear()
 
         return ConversationHandler.END
 
     except Exception as e:
         print("PHONE SAVE ERROR:", e)
-        await update.message.reply_text("❌ Error submitting complaint.")
+
+        await update.message.reply_text(
+            "❌ Error submitting complaint.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
         return ConversationHandler.END
+
 
 # =========================
 # /status COMMAND
-# Example:
-# /status CMP123456
 # =========================
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -195,17 +233,26 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("STATUS ERROR:", e)
         await update.message.reply_text("❌ Error checking complaint status.")
 
+
 # =========================
 # /cancel COMMAND
 # =========================
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Complaint cancelled.")
+    context.user_data.clear()
+
+    await update.message.reply_text(
+        "❌ Complaint cancelled.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
     return ConversationHandler.END
+
 
 # =========================
 # MAIN APP
 # =========================
 app = ApplicationBuilder().token(TOKEN).build()
+
 
 # =========================
 # COMPLAINT CONVERSATION
@@ -216,10 +263,15 @@ conv_handler = ConversationHandler(
         ISSUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_issue)],
         LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_location)],
         DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_details)],
-        PHONE: [MessageHandler(filters.CONTACT, get_phone)],
+        PHONE: [
+            MessageHandler(filters.CONTACT, get_phone),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone),
+        ],
     },
     fallbacks=[CommandHandler("cancel", cancel)],
+    allow_reentry=True,
 )
+
 
 # =========================
 # HANDLERS
@@ -228,8 +280,9 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("status", status_command))
 app.add_handler(conv_handler)
 
+
 # =========================
 # RUN BOT
 # =========================
 print("Bot running...")
-app.run_polling()
+app.run_polling(drop_pending_updates=True)
