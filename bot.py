@@ -126,7 +126,7 @@ async def get_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 # /status COMMAND
 # Example:
-/status CMP123456
+# /status CMP123456
 # =========================
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
