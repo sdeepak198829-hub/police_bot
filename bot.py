@@ -220,12 +220,10 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             complaint_time
         ])
 
-                await update.message.reply_text(
+        await update.message.reply_text(
             f"✅ Complaint submitted successfully!\n\n"
             f"🆔 Your Complaint ID: {complaint_id}\n"
-            f"🕒 Time: {complaint_time}\n\n"
-            f"NB:- Information about a cognizable offence can be given electronically, "
-            f"but it must be signed within three days to be formally taken on record.\n\n"
+            f"🏢 Police Station: {context.user_data.get('selected_station', '')}\n\n"
             f"Use:\n/status {complaint_id}\n\nto check complaint progress.",
             reply_markup=ReplyKeyboardRemove()
         )
