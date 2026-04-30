@@ -57,6 +57,17 @@ POLICE_STATIONS = [
     ["Rangia PS", "Koya PS"]
 ]
 
+# Flat list for validation
+VALID_STATIONS = [
+    "Boko PS", "Goroimari PS",
+    "Nagarbera PS", "Chaygaon PS",
+    "Palashbari PS", "North-Guwahati PS",
+    "Changsari PS", "Hajo PS",
+    "Sualkuchi PS", "Sualkuchi River PS",
+    "Baihata Chariali PS", "Kamalpur PS",
+    "Rangia PS", "Koya PS"
+]
+
 # =========================
 # SAVE TO GOOGLE SHEETS
 # =========================
@@ -125,7 +136,13 @@ async def get_station(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Please select a police station.")
         return STATION
 
-    context.user_data["selected_station"] = update.message.text
+    selected_station = update.message.text.strip()
+
+    if selected_station not in VALID_STATIONS:
+        await update.message.reply_text("❌ Please select a valid police station from the keyboard.")
+        return STATION
+
+    context.user_data["selected_station"] = selected_station
 
     await update.message.reply_text(
         "📍 Enter exact place of occurrence:",
@@ -197,7 +214,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Default fields
         status = "Pending"
-        assigned_station = "Not Assigned"
+        assigned_station = context.user_data.get("selected_station", "Not Assigned")
         officer = "Not Assigned"
 
         # Current time
@@ -223,7 +240,9 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ Complaint submitted successfully!\n\n"
             f"🆔 Your Complaint ID: {complaint_id}\n"
-            f"🏢 Police Station: {context.user_data.get('selected_station', '')}\n\n"
+            f"🏢 Police Station: {context.user_data.get('selected_station', '')}\n"
+            f"🕒 Time: {complaint_time}\n\n"
+            f"NB:- Information about a cognizable offence can be given electronically, but it must be signed within three days to be formally taken on record.\n\n"
             f"Use:\n/status {complaint_id}\n\nto check complaint progress.",
             reply_markup=ReplyKeyboardRemove()
         )
