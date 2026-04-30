@@ -42,7 +42,20 @@ sheet = client.open("Police Complaints").sheet1
 # =========================
 # STATES
 # =========================
-ISSUE, LOCATION, DETAILS, PHONE = range(4)
+ISSUE, STATION, LOCATION, DETAILS, PHONE = range(5)
+
+# =========================
+# POLICE STATION LIST
+# =========================
+POLICE_STATIONS = [
+    ["Boko PS", "Goroimari PS"],
+    ["Nagarbera PS", "Chaygaon PS"],
+    ["Palashbari PS", "North-Guwahati PS"],
+    ["Changsari PS", "Hajo PS"],
+    ["Sualkuchi PS", "Sualkuchi River PS"],
+    ["Baihata Chariali PS", "Kamalpur PS"],
+    ["Rangia PS", "Koya PS"]
+]
 
 # =========================
 # SAVE TO GOOGLE SHEETS
@@ -70,7 +83,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # /complaint START
 # =========================
 async def start_complaint(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Clear previous conversation data
     context.user_data.clear()
 
     await update.message.reply_text(
@@ -91,7 +103,35 @@ async def get_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["issue"] = update.message.text
 
-    await update.message.reply_text("📍 Enter location:")
+    reply_markup = ReplyKeyboardMarkup(
+        POLICE_STATIONS,
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+    await update.message.reply_text(
+        "🏢 Select Concerned Police Station:",
+        reply_markup=reply_markup
+    )
+
+    return STATION
+
+
+# =========================
+# STATION
+# =========================
+async def get_station(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.text:
+        await update.message.reply_text("❌ Please select a police station.")
+        return STATION
+
+    context.user_data["selected_station"] = update.message.text
+
+    await update.message.reply_text(
+        "📍 Enter exact place of occurrence:",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
     return LOCATION
 
 
@@ -100,7 +140,7 @@ async def get_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.text:
-        await update.message.reply_text("❌ Please type your location.")
+        await update.message.reply_text("❌ Please type location.")
         return LOCATION
 
     context.user_data["location"] = update.message.text
@@ -157,31 +197,33 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Default fields
         status = "Pending"
-        station = "Not Assigned"
+        assigned_station = "Not Assigned"
         officer = "Not Assigned"
 
         # Current time
         complaint_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Google Sheet Column Order:
-        # Complaint ID | Name | Telegram ID | Phone | Issue | Location | Details | Status | Station | Officer | Time
+        # Complaint ID | Name | Telegram ID | Phone | Police Station | Issue | Location | Details | Status | Station | Officer | Time
         save_to_sheets([
             complaint_id,
             user.first_name,
             user.id,
             phone_number,
+            context.user_data.get("selected_station", ""),
             context.user_data.get("issue", ""),
             context.user_data.get("location", ""),
             context.user_data.get("details", ""),
             status,
-            station,
+            assigned_station,
             officer,
             complaint_time
         ])
 
         await update.message.reply_text(
             f"✅ Complaint submitted successfully!\n\n"
-            f"🆔 Your Complaint ID: {complaint_id}\n\n"
+            f"🆔 Your Complaint ID: {complaint_id}\n"
+            f"🏢 Police Station: {context.user_data.get('selected_station', '')}\n\n"
             f"Use:\n/status {complaint_id}\n\nto check complaint progress.",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -220,8 +262,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if str(row["Complaint ID"]).strip() == complaint_id:
                 await update.message.reply_text(
                     f"🆔 Complaint ID: {complaint_id}\n"
+                    f"🏢 Selected PS: {row.get('Police Station', 'N/A')}\n"
                     f"📄 Status: {row.get('Status', 'Pending')}\n"
-                    f"🏢 Station: {row.get('Station', 'Not Assigned')}\n"
+                    f"🏛 Assigned Station: {row.get('Station', 'Not Assigned')}\n"
                     f"👮 Officer: {row.get('Officer', 'Not Assigned')}\n"
                     f"🕒 Time: {row.get('Time', 'N/A')}"
                 )
@@ -261,6 +304,7 @@ conv_handler = ConversationHandler(
     entry_points=[CommandHandler("complaint", start_complaint)],
     states={
         ISSUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_issue)],
+        STATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_station)],
         LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_location)],
         DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_details)],
         PHONE: [
