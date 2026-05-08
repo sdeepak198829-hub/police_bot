@@ -8,11 +8,14 @@ from telegram import (
     ReplyKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardRemove,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
 )
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
     ContextTypes,
     ConversationHandler,
@@ -36,7 +39,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
 client = gspread.authorize(creds)
 
-# Your Google Sheet name (MUST MATCH EXACTLY)
+# Your Google Sheet name
 sheet = client.open("Police Complaints").sheet1
 
 # =========================
@@ -57,9 +60,6 @@ POLICE_STATIONS = [
     ["Rangia PS", "Koya PS"]
 ]
 
-# =========================
-# VALIDATION LIST
-# =========================
 VALID_STATIONS = [
     "Boko PS", "Goroimari PS",
     "Nagarbera PS", "Chaygaon PS",
@@ -102,44 +102,56 @@ def save_to_sheets(data):
 
 
 # =========================
-# SEND TO POLICE GROUP
+# SEND TO POLICE STATION GROUP
 # =========================
-async def send_to_police_group(
-    context,
-    station,
-    complaint_id,
-    user_name,
-    phone,
-    issue,
-    location,
-    details,
-    time
-):
+async def send_to_station_group(context, complaint_id, user, phone_number):
+    selected_station = context.user_data.get("selected_station", "")
+    group_id = GROUP_IDS.get(selected_station)
+
+    if not group_id:
+        print("No group found for:", selected_station)
+        return
+
+    group_message = (
+        f"🚨 NEW POLICE COMPLAINT RECEIVED 🚨\n\n"
+        f"🆔 Complaint ID: {complaint_id}\n"
+        f"👤 Name: {user.first_name}\n"
+        f"🆔 Telegram ID: {user.id}\n"
+        f"📞 Phone: {phone_number}\n"
+        f"🏢 Police Station: {selected_station}\n"
+        f"⚠️ Issue: {context.user_data.get('issue', '')}\n"
+        f"📍 Location: {context.user_data.get('location', '')}\n"
+        f"📝 Details: {context.user_data.get('details', '')}\n"
+    )
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "👮 Assign Officer",
+                callback_data=f"assign|{complaint_id}"
+            ),
+            InlineKeyboardButton(
+                "🔍 Under Inquiry",
+                callback_data=f"inquiry|{complaint_id}"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                "✅ Resolved",
+                callback_data=f"resolved|{complaint_id}"
+            )
+        ]
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     try:
-        group_id = GROUP_IDS.get(station)
-
-        if not group_id:
-            print(f"No group found for station: {station}")
-            return
-
-        message = (
-            f"🚨 NEW POLICE COMPLAINT RECEIVED 🚨\n\n"
-            f"🆔 Complaint ID: {complaint_id}\n"
-            f"👤 Name: {user_name}\n"
-            f"📞 Phone: {phone}\n"
-            f"🏢 Police Station: {station}\n"
-            f"⚠ Issue: {issue}\n"
-            f"📍 Location: {location}\n"
-            f"📝 Details: {details}\n"
-            f"🕒 Time: {time}"
-        )
-
         await context.bot.send_message(
             chat_id=group_id,
-            text=message
+            text=group_message,
+            reply_markup=reply_markup
         )
-
-        print(f"Complaint sent to {station} group.")
+        print("Complaint sent to group:", selected_station)
 
     except Exception as e:
         print("GROUP SEND ERROR:", e)
@@ -277,18 +289,18 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.message.from_user
         phone_number = update.message.contact.phone_number
 
-        # Unique complaint ID
         complaint_id = f"CMP{user.id}{int(datetime.now().timestamp())}"
 
-        # Default fields
         status = "Pending"
-        assigned_station = context.user_data.get("selected_station", "Not Assigned")
+        assigned_station = context.user_data.get(
+            "selected_station",
+            "Not Assigned"
+        )
         officer = "Not Assigned"
 
-        # Current time
         complaint_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Save to Google Sheets
+        # Complaint ID | Name | Telegram ID | Phone | Police Station | Issue | Location | Details | Status | Station | Officer | Time
         save_to_sheets([
             complaint_id,
             user.first_name,
@@ -304,27 +316,20 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             complaint_time
         ])
 
-        # Send to concerned police station Telegram group
-        await send_to_police_group(
-            context=context,
-            station=context.user_data.get("selected_station", ""),
-            complaint_id=complaint_id,
-            user_name=user.first_name,
-            phone=phone_number,
-            issue=context.user_data.get("issue", ""),
-            location=context.user_data.get("location", ""),
-            details=context.user_data.get("details", ""),
-            time=complaint_time
+        # Send to police station group
+        await send_to_station_group(
+            context,
+            complaint_id,
+            user,
+            phone_number
         )
 
-        # Citizen reply
         await update.message.reply_text(
             f"✅ Complaint submitted successfully!\n\n"
             f"🆔 Your Complaint ID: {complaint_id}\n"
             f"🏢 Police Station: {context.user_data.get('selected_station', '')}\n"
             f"🕒 Time: {complaint_time}\n\n"
-            f"NB:- Information about a cognizable offence can be given electronically, "
-            f"but it must be signed within three days to be formally taken on record.\n\n"
+            f"NB:- Information about a cognizable offence can be given electronically, but it must be signed within three days to be formally taken on record.\n\n"
             f"Use:\n/status {complaint_id}\n\nto check complaint progress.",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -342,6 +347,49 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         return ConversationHandler.END
+
+
+# =========================
+# GROUP BUTTON HANDLER
+# =========================
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data.split("|")
+    action = data[0]
+    complaint_id = data[1]
+
+    records = sheet.get_all_records()
+
+    for i, row in enumerate(records, start=2):
+        if str(row["Complaint ID"]).strip() == complaint_id:
+
+            if action == "inquiry":
+                sheet.update_cell(i, 9, "Under Inquiry")
+
+                await query.edit_message_text(
+                    f"🔍 Complaint ID: {complaint_id}\n"
+                    f"Status Updated: Under Inquiry"
+                )
+
+            elif action == "resolved":
+                sheet.update_cell(i, 9, "Resolved")
+
+                await query.edit_message_text(
+                    f"✅ Complaint ID: {complaint_id}\n"
+                    f"Status Updated: Resolved"
+                )
+
+            elif action == "assign":
+                sheet.update_cell(i, 11, "Assigned by OC")
+
+                await query.edit_message_text(
+                    f"👮 Complaint ID: {complaint_id}\n"
+                    f"Officer Assigned by OC"
+                )
+
+            return
 
 
 # =========================
@@ -375,7 +423,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print("STATUS ERROR:", e)
-        await update.message.reply_text("❌ Error checking complaint status.")
+        await update.message.reply_text(
+            "❌ Error checking complaint status."
+        )
 
 
 # =========================
@@ -424,6 +474,7 @@ conv_handler = ConversationHandler(
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("status", status_command))
 app.add_handler(conv_handler)
+app.add_handler(CallbackQueryHandler(button_handler))
 
 
 # =========================
