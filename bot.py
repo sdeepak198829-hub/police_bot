@@ -3,6 +3,7 @@ import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
@@ -11,6 +12,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -39,7 +41,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
 client = gspread.authorize(creds)
 
-# Your Google Sheet name
+# Google Sheet name
 sheet = client.open("Police Complaints").sheet1
 
 # =========================
@@ -48,7 +50,7 @@ sheet = client.open("Police Complaints").sheet1
 ISSUE, STATION, LOCATION, DETAILS, PHONE = range(5)
 
 # =========================
-# POLICE STATION LIST
+# POLICE STATIONS
 # =========================
 POLICE_STATIONS = [
     ["Boko PS", "Goroimari PS"],
@@ -71,7 +73,7 @@ VALID_STATIONS = [
 ]
 
 # =========================
-# TELEGRAM GROUP IDS
+# TELEGRAM GROUP IDs
 # =========================
 GROUP_IDS = {
     "Boko PS": -5180632565,
@@ -102,63 +104,7 @@ def save_to_sheets(data):
 
 
 # =========================
-# SEND TO POLICE STATION GROUP
-# =========================
-async def send_to_station_group(context, complaint_id, user, phone_number):
-    selected_station = context.user_data.get("selected_station", "")
-    group_id = GROUP_IDS.get(selected_station)
-
-    if not group_id:
-        print("No group found for:", selected_station)
-        return
-
-    group_message = (
-        f"🚨 NEW POLICE COMPLAINT RECEIVED 🚨\n\n"
-        f"🆔 Complaint ID: {complaint_id}\n"
-        f"👤 Name: {user.first_name}\n"
-        f"🆔 Telegram ID: {user.id}\n"
-        f"📞 Phone: {phone_number}\n"
-        f"🏢 Police Station: {selected_station}\n"
-        f"⚠️ Issue: {context.user_data.get('issue', '')}\n"
-        f"📍 Location: {context.user_data.get('location', '')}\n"
-        f"📝 Details: {context.user_data.get('details', '')}\n"
-    )
-
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "👮 Assign Officer",
-                callback_data=f"assign|{complaint_id}"
-            ),
-            InlineKeyboardButton(
-                "🔍 Under Inquiry",
-                callback_data=f"inquiry|{complaint_id}"
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                "✅ Resolved",
-                callback_data=f"resolved|{complaint_id}"
-            )
-        ]
-    ]
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    try:
-        await context.bot.send_message(
-            chat_id=group_id,
-            text=group_message,
-            reply_markup=reply_markup
-        )
-        print("Complaint sent to group:", selected_station)
-
-    except Exception as e:
-        print("GROUP SEND ERROR:", e)
-
-
-# =========================
-# /start COMMAND
+# /start
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -292,15 +238,13 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         complaint_id = f"CMP{user.id}{int(datetime.now().timestamp())}"
 
         status = "Pending"
-        assigned_station = context.user_data.get(
-            "selected_station",
-            "Not Assigned"
-        )
+        assigned_station = context.user_data.get("selected_station", "Not Assigned")
         officer = "Not Assigned"
 
         complaint_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Complaint ID | Name | Telegram ID | Phone | Police Station | Issue | Location | Details | Status | Station | Officer | Time
+        # Sheet Header:
+        # Complaint ID | Name | Telegram ID | Phone | Police Station | Issue | Location | Details | Status | Station | Officer | User Chat ID | Time
         save_to_sheets([
             complaint_id,
             user.first_name,
@@ -317,14 +261,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             complaint_time
         ])
 
-        # Send to police station group
-        await send_to_station_group(
-            context,
-            complaint_id,
-            user,
-            phone_number
-        )
-
+        # Citizen Reply
         await update.message.reply_text(
             f"✅ Complaint submitted successfully!\n\n"
             f"🆔 Your Complaint ID: {complaint_id}\n"
@@ -334,6 +271,42 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Use:\n/status {complaint_id}\n\nto check complaint progress.",
             reply_markup=ReplyKeyboardRemove()
         )
+
+        # =========================
+        # AUTO SEND TO POLICE GROUP
+        # =========================
+        selected_station = context.user_data.get("selected_station", "")
+        group_id = GROUP_IDS.get(selected_station)
+
+        if group_id:
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "✍ Update Case",
+                        callback_data=f"update_{complaint_id}"
+                    ),
+                    InlineKeyboardButton(
+                        "✅ Resolved",
+                        callback_data=f"resolved_{complaint_id}"
+                    ),
+                ]
+            ])
+
+            await context.bot.send_message(
+                chat_id=group_id,
+                text=(
+                    f"🚨 NEW POLICE COMPLAINT\n\n"
+                    f"🆔 Complaint ID: {complaint_id}\n"
+                    f"👤 Name: {user.first_name}\n"
+                    f"📞 Phone: {phone_number}\n"
+                    f"🏢 Police Station: {selected_station}\n"
+                    f"📌 Issue: {context.user_data.get('issue', '')}\n"
+                    f"📍 Location: {context.user_data.get('location', '')}\n"
+                    f"📝 Details: {context.user_data.get('details', '')}\n"
+                    f"🕒 Time: {complaint_time}"
+                ),
+                reply_markup=keyboard
+            )
 
         context.user_data.clear()
 
@@ -351,50 +324,9 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# GROUP BUTTON HANDLER
-# =========================
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data.split("|")
-    action = data[0]
-    complaint_id = data[1]
-
-    records = sheet.get_all_records()
-
-    for i, row in enumerate(records, start=2):
-        if str(row["Complaint ID"]).strip() == complaint_id:
-
-            if action == "inquiry":
-                sheet.update_cell(i, 9, "Under Inquiry")
-
-                await query.edit_message_text(
-                    f"🔍 Complaint ID: {complaint_id}\n"
-                    f"Status Updated: Under Inquiry"
-                )
-
-            elif action == "resolved":
-                sheet.update_cell(i, 9, "Resolved")
-
-                await query.edit_message_text(
-                    f"✅ Complaint ID: {complaint_id}\n"
-                    f"Status Updated: Resolved"
-                )
-
-            elif action == "assign":
-                sheet.update_cell(i, 11, "Assigned by OC")
-
-                await query.edit_message_text(
-                    f"👮 Complaint ID: {complaint_id}\n"
-                    f"Officer Assigned by OC"
-                )
-
-            return
-# =========================
-# /update COMMAND FOR OC
-# Example:
-# /update CMP12345 SI Das assigned. Investigation started.
+# /update COMMAND BY OC
+# Format:
+# /update CMP123 Officer assigned SI Das
 # =========================
 async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -405,39 +337,35 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         complaint_id = context.args[0].strip()
-        new_update = " ".join(context.args[1:]).strip()
+        new_status = " ".join(context.args[1:]).strip()
 
         records = sheet.get_all_records()
 
         for i, row in enumerate(records, start=2):
             if str(row["Complaint ID"]).strip() == complaint_id:
 
-                # Update Status Column (9)
-                sheet.update_cell(i, 9, new_update)
+                # Update Status column (9)
+                sheet.update_cell(i, 9, new_status)
 
-                # Get user chat ID
                 user_chat_id = row.get("User Chat ID")
 
-                # Notify complainant
+                # Notify citizen
                 if user_chat_id:
                     try:
                         await context.bot.send_message(
                             chat_id=int(user_chat_id),
                             text=(
-                                f"🚓 Update on Your Complaint\n\n"
+                                f"📢 Complaint Update\n\n"
                                 f"🆔 Complaint ID: {complaint_id}\n"
-                                f"📄 Status Update: {new_update}"
+                                f"📄 New Status: {new_status}"
                             )
                         )
                     except Exception as e:
-                        print("USER NOTIFY ERROR:", e)
+                        print("NOTIFY ERROR:", e)
 
                 await update.message.reply_text(
-                    f"✅ Complaint updated successfully!\n\n"
-                    f"🆔 {complaint_id}\n"
-                    f"📄 {new_update}"
+                    f"✅ Complaint {complaint_id} updated successfully."
                 )
-
                 return
 
         await update.message.reply_text("❌ Complaint ID not found.")
@@ -445,6 +373,58 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("UPDATE ERROR:", e)
         await update.message.reply_text("❌ Error updating complaint.")
+
+
+# =========================
+# BUTTON HANDLER
+# =========================
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+
+    if data.startswith("update_"):
+        complaint_id = data.replace("update_", "")
+
+        await query.message.reply_text(
+            f"✍ To update this complaint, use:\n\n"
+            f"/update {complaint_id} YOUR_UPDATE"
+        )
+
+    elif data.startswith("resolved_"):
+        complaint_id = data.replace("resolved_", "")
+
+        records = sheet.get_all_records()
+
+        for i, row in enumerate(records, start=2):
+            if str(row["Complaint ID"]).strip() == complaint_id:
+
+                sheet.update_cell(i, 9, "Resolved")
+
+                user_chat_id = row.get("User Chat ID")
+
+                if user_chat_id:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=int(user_chat_id),
+                            text=(
+                                f"✅ Your Complaint Has Been Resolved\n\n"
+                                f"🆔 Complaint ID: {complaint_id}\n"
+                                f"📄 Status: Resolved"
+                            )
+                        )
+                    except Exception as e:
+                        print("RESOLVED NOTIFY ERROR:", e)
+
+                await query.message.reply_text(
+                    f"✅ Complaint {complaint_id} marked as Resolved."
+                )
+
+                return
+
+        await query.message.reply_text("❌ Complaint ID not found.")
+
 
 # =========================
 # /status COMMAND
@@ -477,13 +457,11 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print("STATUS ERROR:", e)
-        await update.message.reply_text(
-            "❌ Error checking complaint status."
-        )
+        await update.message.reply_text("❌ Error checking complaint status.")
 
 
 # =========================
-# /cancel COMMAND
+# /cancel
 # =========================
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -503,7 +481,7 @@ app = ApplicationBuilder().token(TOKEN).build()
 
 
 # =========================
-# COMPLAINT CONVERSATION
+# CONVERSATION HANDLER
 # =========================
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("complaint", start_complaint)],
@@ -521,15 +499,14 @@ conv_handler = ConversationHandler(
     allow_reentry=True,
 )
 
-
 # =========================
 # HANDLERS
 # =========================
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("status", status_command))
-app.add_handler(conv_handler)
+app.add_handler(CommandHandler("update", update_command))
 app.add_handler(CallbackQueryHandler(button_handler))
-
+app.add_handler(conv_handler)
 
 # =========================
 # RUN BOT
