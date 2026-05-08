@@ -57,7 +57,9 @@ POLICE_STATIONS = [
     ["Rangia PS", "Koya PS"]
 ]
 
-# Flat list for validation
+# =========================
+# VALIDATION LIST
+# =========================
 VALID_STATIONS = [
     "Boko PS", "Goroimari PS",
     "Nagarbera PS", "Chaygaon PS",
@@ -69,6 +71,26 @@ VALID_STATIONS = [
 ]
 
 # =========================
+# TELEGRAM GROUP IDS
+# =========================
+GROUP_IDS = {
+    "Boko PS": -5180632565,
+    "Goroimari PS": -5122164609,
+    "Nagarbera PS": -5180303762,
+    "Chaygaon PS": -5151532841,
+    "Palashbari PS": -5202655516,
+    "North-Guwahati PS": -5286314391,
+    "Changsari PS": -5265098262,
+    "Hajo PS": -5115023508,
+    "Sualkuchi PS": -5104227036,
+    "Sualkuchi River PS": -5278755795,
+    "Baihata Chariali PS": -5151179998,
+    "Kamalpur PS": -5250983210,
+    "Rangia PS": -5246354349,
+    "Koya PS": -5212824791,
+}
+
+# =========================
 # SAVE TO GOOGLE SHEETS
 # =========================
 def save_to_sheets(data):
@@ -77,6 +99,50 @@ def save_to_sheets(data):
         print("Saved to Google Sheets!")
     except Exception as e:
         print("ERROR saving to sheet:", e)
+
+
+# =========================
+# SEND TO POLICE GROUP
+# =========================
+async def send_to_police_group(
+    context,
+    station,
+    complaint_id,
+    user_name,
+    phone,
+    issue,
+    location,
+    details,
+    time
+):
+    try:
+        group_id = GROUP_IDS.get(station)
+
+        if not group_id:
+            print(f"No group found for station: {station}")
+            return
+
+        message = (
+            f"🚨 NEW POLICE COMPLAINT RECEIVED 🚨\n\n"
+            f"🆔 Complaint ID: {complaint_id}\n"
+            f"👤 Name: {user_name}\n"
+            f"📞 Phone: {phone}\n"
+            f"🏢 Police Station: {station}\n"
+            f"⚠ Issue: {issue}\n"
+            f"📍 Location: {location}\n"
+            f"📝 Details: {details}\n"
+            f"🕒 Time: {time}"
+        )
+
+        await context.bot.send_message(
+            chat_id=group_id,
+            text=message
+        )
+
+        print(f"Complaint sent to {station} group.")
+
+    except Exception as e:
+        print("GROUP SEND ERROR:", e)
 
 
 # =========================
@@ -139,7 +205,9 @@ async def get_station(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_station = update.message.text.strip()
 
     if selected_station not in VALID_STATIONS:
-        await update.message.reply_text("❌ Please select a valid police station from the keyboard.")
+        await update.message.reply_text(
+            "❌ Please select a valid police station from the keyboard."
+        )
         return STATION
 
     context.user_data["selected_station"] = selected_station
@@ -220,8 +288,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Current time
         complaint_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Google Sheet Column Order:
-        # Complaint ID | Name | Telegram ID | Phone | Police Station | Issue | Location | Details | Status | Station | Officer | Time
+        # Save to Google Sheets
         save_to_sheets([
             complaint_id,
             user.first_name,
@@ -237,12 +304,27 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             complaint_time
         ])
 
+        # Send to concerned police station Telegram group
+        await send_to_police_group(
+            context=context,
+            station=context.user_data.get("selected_station", ""),
+            complaint_id=complaint_id,
+            user_name=user.first_name,
+            phone=phone_number,
+            issue=context.user_data.get("issue", ""),
+            location=context.user_data.get("location", ""),
+            details=context.user_data.get("details", ""),
+            time=complaint_time
+        )
+
+        # Citizen reply
         await update.message.reply_text(
             f"✅ Complaint submitted successfully!\n\n"
             f"🆔 Your Complaint ID: {complaint_id}\n"
             f"🏢 Police Station: {context.user_data.get('selected_station', '')}\n"
             f"🕒 Time: {complaint_time}\n\n"
-            f"NB:- Information about a cognizable offence can be given electronically, but it must be signed within three days to be formally taken on record.\n\n"
+            f"NB:- Information about a cognizable offence can be given electronically, "
+            f"but it must be signed within three days to be formally taken on record.\n\n"
             f"Use:\n/status {complaint_id}\n\nto check complaint progress.",
             reply_markup=ReplyKeyboardRemove()
         )
