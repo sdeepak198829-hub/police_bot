@@ -313,6 +313,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status,
             assigned_station,
             officer,
+            update.message.chat_id,
             complaint_time
         ])
 
@@ -390,7 +391,60 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
             return
+# =========================
+# /update COMMAND FOR OC
+# Example:
+# /update CMP12345 SI Das assigned. Investigation started.
+# =========================
+async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if len(context.args) < 2:
+            await update.message.reply_text(
+                "❌ Use format:\n/update COMPLAINT_ID YOUR_UPDATE"
+            )
+            return
 
+        complaint_id = context.args[0].strip()
+        new_update = " ".join(context.args[1:]).strip()
+
+        records = sheet.get_all_records()
+
+        for i, row in enumerate(records, start=2):
+            if str(row["Complaint ID"]).strip() == complaint_id:
+
+                # Update Status Column (9)
+                sheet.update_cell(i, 9, new_update)
+
+                # Get user chat ID
+                user_chat_id = row.get("User Chat ID")
+
+                # Notify complainant
+                if user_chat_id:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=int(user_chat_id),
+                            text=(
+                                f"🚓 Update on Your Complaint\n\n"
+                                f"🆔 Complaint ID: {complaint_id}\n"
+                                f"📄 Status Update: {new_update}"
+                            )
+                        )
+                    except Exception as e:
+                        print("USER NOTIFY ERROR:", e)
+
+                await update.message.reply_text(
+                    f"✅ Complaint updated successfully!\n\n"
+                    f"🆔 {complaint_id}\n"
+                    f"📄 {new_update}"
+                )
+
+                return
+
+        await update.message.reply_text("❌ Complaint ID not found.")
+
+    except Exception as e:
+        print("UPDATE ERROR:", e)
+        await update.message.reply_text("❌ Error updating complaint.")
 
 # =========================
 # /status COMMAND
